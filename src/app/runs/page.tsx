@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { APP_NAV } from "@/components/app/app-nav";
+import { APP_NAV, VENDOR_NAV } from "@/components/app/app-nav";
 import { SignOutButton } from "@/components/app/sign-out-button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FlashAlert } from "@/components/app/flash-alert";
 import { buttonVariants } from "@/components/ui/button";
 import { AppShell, PageHeader } from "@/components/ui/page";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { messageFor, RUN_STATUS_TONE, runListRows, runsListView, type RunStatus, type TaskStatus } from "@/lib/runs/domain";
+import { messageFor, RUN_STATUS_TONE, runListRows, runsListView, vendorRunListRows, vendorRunsListView, type RunStatus, type TaskStatus } from "@/lib/runs/domain";
 import { createClient } from "@/lib/supabase/server";
 
 // Список запусків (AC-TASK-06, AC-TASK-09, AC-TASK-13, AC-TASK-14, AC-TASK-17, AC-DSYS-01, AC-DSYS-04). Які запуски
@@ -20,9 +20,65 @@ export default async function RunsPage({ searchParams }: PageProps<"/runs">) {
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims) redirect("/login");
 
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.claims.sub).maybeSingle();
   const { data: runs } = await supabase
     .from("runs")
-    .select("id, case_name, template_name, status, created_at, run_tasks(status)");
+    .select("id, case_name, template_name, status, created_at, run_manager_id, run_tasks(status, assignee_id)");
+
+  if (profile?.role === "vendor") {
+    // AC-VENDOR-03, AC-VENDOR-10: вендор — лише запуски з його задачами; RLS віддає лише його задачі.
+    const vendorRows = vendorRunListRows(
+      (runs ?? []).map((r) => ({
+        id: r.id,
+        caseName: r.case_name,
+        templateName: r.template_name,
+        status: r.status as RunStatus,
+        createdAt: r.created_at,
+        tasks: r.run_tasks.map((t) => ({ assigneeId: t.assignee_id, status: t.status as TaskStatus })),
+      })),
+      data.claims.sub,
+    );
+    const vendorView = vendorRunsListView(vendorRows.length);
+    const vendorStatus = new Map((runs ?? []).map((r) => [r.id, r.status as RunStatus]));
+    return (
+      <AppShell nav={VENDOR_NAV} actions={<SignOutButton />}>
+        <PageHeader title="Runs" />
+        <FlashAlert message={message} />
+        {vendorView.kind === "table" ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Case</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Your tasks</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {vendorRows.map((row) => (
+                <TableRow key={row.id} data-testid="run-row">
+                  <TableCell>
+                    <Link href={`/runs/${row.id}`} className="text-primary underline-offset-4 hover:underline">
+                      {row.caseName}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge tone={RUN_STATUS_TONE[vendorStatus.get(row.id) ?? "in_progress"]}>{row.status}</StatusBadge>
+                  </TableCell>
+                  <TableCell data-testid="run-progress" className="tabular-nums">
+                    {row.yourTasks}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-6">
+            <p className="text-sm text-muted-foreground">{vendorView.message}</p>
+          </div>
+        )}
+      </AppShell>
+    );
+  }
 
   const rows = runListRows(
     (runs ?? []).map((r) => ({
@@ -49,11 +105,7 @@ export default async function RunsPage({ searchParams }: PageProps<"/runs">) {
           ) : null
         }
       />
-      {message ? (
-        <Alert variant="destructive">
-          <AlertDescription>{message}</AlertDescription>
-        </Alert>
-      ) : null}
+      <FlashAlert message={message} />
       {view.kind === "table" ? (
         <Table>
           <TableHeader>

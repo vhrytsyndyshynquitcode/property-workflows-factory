@@ -2,7 +2,14 @@
 // функції: хто що бачить, тексти дослівно з AC PM, формат дати версії. Права даних перевіряє база
 // (міграція 20261026084454_template_versions.sql): ці функції — для сторінок, дій і тестів з AC ID.
 
-export type Role = "manager" | "admin";
+export type Role = "manager" | "admin" | "vendor";
+
+/** AC-VENDOR-08: список шаблонів вендору недоступний. */
+export function templatesListAccess(role: Role):
+  | { kind: "denied"; message: typeof TEMPLATE_MESSAGES.notEnoughRights }
+  | { kind: "allowed" } {
+  return role === "vendor" ? { kind: "denied", message: TEMPLATE_MESSAGES.notEnoughRights } : { kind: "allowed" };
+}
 
 export const TEMPLATE_MESSAGES = {
   notEnoughRights: "Not enough rights",

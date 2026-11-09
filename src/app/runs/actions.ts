@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { errorCodeForDb, needsConfirmation, validateCaseName, type TaskStatus } from "@/lib/runs/domain";
+import { errorCodeForDb, validateCaseName } from "@/lib/runs/domain";
 
 // Запуск шаблону для випадку (AC-RUN-01, AC-RUN-03..09). Правила дублює функція бази public.launch_run:
 // тут — лише щоб показати повідомлення PM без зайвого запиту.
@@ -50,13 +50,10 @@ export async function markTaskDone(formData: FormData) {
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims) redirect("/login");
 
+  // «Остання обов'язкова» визначає база: вендор бачить лише свої задачі, тож за видимістю це було б хибно.
   if (!confirmed) {
-    const { data: tasks } = await supabase
-      .from("run_tasks")
-      .select("id, is_required, status")
-      .eq("run_id", runId);
-    const shaped = (tasks ?? []).map((t) => ({ id: t.id, isRequired: t.is_required, status: t.status as TaskStatus }));
-    if (needsConfirmation(shaped, taskId)) {
+    const { data: isLast } = await supabase.rpc("is_last_required_task", { p_task_id: taskId });
+    if (isLast) {
       redirect(`/runs/${runId}?confirm=${encodeURIComponent(taskId)}`);
     }
   }

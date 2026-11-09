@@ -1,9 +1,9 @@
 import { cn } from "cn";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { APP_NAV } from "@/components/app/app-nav";
+import { APP_NAV, VENDOR_NAV } from "@/components/app/app-nav";
 import { SignOutButton } from "@/components/app/sign-out-button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FlashAlert } from "@/components/app/flash-alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { AppShell, PageHeader } from "@/components/ui/page";
 import { assigneeOptions, CASE_NAME_MAX, messageFor } from "@/lib/runs/domain";
 import { createClient } from "@/lib/supabase/server";
-import { launchOption } from "@/lib/templates/domain";
+import { launchOption, TEMPLATE_MESSAGES } from "@/lib/templates/domain";
 import { launchRun } from "../actions";
 
 // Запуск шаблону: шаблон → назва випадку → виконавець кожної задачі (AC-RUN-01, AC-RUN-03..11).
@@ -26,6 +26,16 @@ export default async function NewRunPage({ searchParams }: PageProps<"/runs/new"
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
   if (!claims) redirect("/login");
+
+  // AC-VENDOR-09: вендор не запускає шаблони; дані шаблонів не читаємо (RLS їх і не віддає).
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", claims.sub).maybeSingle();
+  if (me?.role === "vendor") {
+    return (
+      <AppShell nav={VENDOR_NAV} actions={<SignOutButton />}>
+        <FlashAlert message={TEMPLATE_MESSAGES.notEnoughRights} />
+      </AppShell>
+    );
+  }
 
   // Запускаємо лише збережену поточну версію (AC-EDITOR-06). Незбережений шаблон адміністратор бачить недоступним з
   // приміткою «Save the template to launch it», менеджерові RLS його не віддає (AC-EDITOR-10); запуск напряму
@@ -115,11 +125,7 @@ export default async function NewRunPage({ searchParams }: PageProps<"/runs/new"
                   </div>
                 ))}
               </fieldset>
-              {message ? (
-                <Alert variant="destructive">
-                  <AlertDescription>{message}</AlertDescription>
-                </Alert>
-              ) : null}
+              <FlashAlert message={message} />
               <Button type="submit" size="lg" className="self-start">
                 Launch
               </Button>

@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { APP_NAV } from "@/components/app/app-nav";
+import { APP_NAV, VENDOR_NAV } from "@/components/app/app-nav";
 import { SignOutButton } from "@/components/app/sign-out-button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FlashAlert } from "@/components/app/flash-alert";
 import { buttonVariants } from "@/components/ui/button";
 import { AppShell, PageHeader } from "@/components/ui/page";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { showUnpublishedNotice, TEMPLATE_MESSAGES, templateMessageFor, templatesEmptyState } from "@/lib/templates/domain";
+import { showUnpublishedNotice, TEMPLATE_MESSAGES, templateMessageFor, templatesEmptyState, templatesListAccess } from "@/lib/templates/domain";
 import { currentUser } from "@/lib/templates/server";
 
 // Список шаблонів (AC-EDITOR-01, AC-EDITOR-02): admin бачить усі, з позначкою «Unpublished changes»; manager — лише
@@ -15,6 +15,15 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
   const { error } = await searchParams;
   const message = templateMessageFor(error);
   const { supabase, role } = await currentUser();
+  const access = templatesListAccess(role ?? "manager");
+  if (access.kind === "denied") {
+    // AC-VENDOR-08: вендору — лише повідомлення, дані шаблонів не читаємо.
+    return (
+      <AppShell nav={VENDOR_NAV} actions={<SignOutButton />}>
+        <FlashAlert message={access.message} />
+      </AppShell>
+    );
+  }
   const isAdmin = role === "admin";
   const empty = templatesEmptyState(isAdmin ? "admin" : "manager");
 
@@ -35,11 +44,7 @@ export default async function TemplatesPage({ searchParams }: PageProps<"/templa
           ) : null
         }
       />
-      {message ? (
-        <Alert variant="destructive">
-          <AlertDescription>{message}</AlertDescription>
-        </Alert>
-      ) : null}
+      <FlashAlert message={message} />
       {templates && templates.length > 0 ? (
         <Table>
           <TableHeader>

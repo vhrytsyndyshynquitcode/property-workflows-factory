@@ -5,7 +5,9 @@ import { fixtures, runScript } from "./run-script";
 const dir = (name: string) => path.join(fixtures, "check-spec", name);
 const run = (name: string, env?: Record<string, string>) => runScript("check-spec.mjs", dir(name), env);
 
-describe("scripts/check-spec.mjs", () => {
+// Тести скриптів запускають git і node в окремих процесах: на Windows під навантаженням (паралельні бази PGlite)
+// один запуск перевищував типові 5 с — фабрика (doctor: deterministic-tests) вимагає стабільних результатів.
+describe("scripts/check-spec.mjs", { timeout: 30_000 }, () => {
   it("passes valid specs, ignores archived changes and allows MODIFIED/RENAMED to reuse canonical IDs", () => {
     const { code, out } = run("valid");
     expect(out).toContain("OK");

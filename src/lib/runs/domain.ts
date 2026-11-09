@@ -204,6 +204,54 @@ export function runsListView(rowCount: number):
     : { kind: "table" };
 }
 
+/** AC-VENDOR-03, AC-VENDOR-05: «Your tasks: N of K done» — лише задачі користувача. */
+export function yourTasksLabel(tasks: readonly Pick<RunTask, "assigneeId" | "status">[], userId: string): string {
+  const own = tasks.filter((t) => t.assigneeId === userId);
+  return `Your tasks: ${own.filter((t) => t.status === "done").length} of ${own.length} done`;
+}
+
+type VendorRunInput = Omit<RunListItem, "tasks"> & { tasks: readonly Pick<RunTask, "assigneeId" | "status">[] };
+
+/** AC-VENDOR-03: список запусків вендора — лише запуски з його задачами; новіші першими. */
+export function vendorRunListRows(runs: readonly VendorRunInput[], vendorId: string) {
+  return [...runs]
+    .filter((r) => r.tasks.some((t) => t.assigneeId === vendorId))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((r) => ({
+      id: r.id,
+      caseName: r.caseName,
+      status: RUN_STATUS_LABEL[r.status],
+      yourTasks: yourTasksLabel(r.tasks, vendorId),
+    }));
+}
+
+/** AC-VENDOR-04, AC-VENDOR-06: сторінка запуску очима вендора — лише його задачі або «Run not found». */
+export function vendorRunView(
+  run: (Pick<Run, "id"> & { tasks: readonly RunTask[] }) | null,
+  vendorId: string,
+):
+  | { kind: "not_found"; message: typeof RUN_NOT_FOUND }
+  | { kind: "tasks"; tasks: { id: string; name: string; section: string; required: "required" | "optional"; status: string }[] } {
+  const own = run?.tasks.filter((t) => t.assigneeId === vendorId) ?? [];
+  if (!run || own.length === 0) return { kind: "not_found", message: RUN_NOT_FOUND };
+  return {
+    kind: "tasks",
+    tasks: own.map((t) => ({
+      id: t.id,
+      name: t.name,
+      section: t.sectionName,
+      required: requiredLabel(t.isRequired),
+      status: TASK_STATUS_LABEL[t.status],
+    })),
+  };
+}
+
+/** AC-VENDOR-10: вендору без задач — повідомлення без таблиці. */
+export const NO_VENDOR_TASKS = "No tasks assigned to you yet.";
+export function vendorRunsListView(rowCount: number): { kind: "empty"; message: typeof NO_VENDOR_TASKS } | { kind: "table" } {
+  return rowCount === 0 ? { kind: "empty", message: NO_VENDOR_TASKS } : { kind: "table" };
+}
+
 /** Помилка функції бази (raise exception 'CASE_NAME_EMPTY' тощо) → код для searchParams. */
 export function errorCodeForDb(message: string | undefined): ErrorCode {
   if (message?.includes("CASE_NAME_EMPTY")) return "case_name_empty";
