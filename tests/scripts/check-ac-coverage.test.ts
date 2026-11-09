@@ -4,7 +4,9 @@ import { fixtures, runScript } from "./run-script";
 
 const run = (name: string) => runScript("check-ac-coverage.mjs", path.join(fixtures, "ac-coverage", name));
 
-describe("scripts/check-ac-coverage.mjs", () => {
+// Тести скриптів запускають git і node в окремих процесах: на Windows під навантаженням (паралельні бази PGlite)
+// один запуск перевищував типові 5 с — фабрика (doctor: deterministic-tests) вимагає стабільних результатів.
+describe("scripts/check-ac-coverage.mjs", { timeout: 30_000 }, () => {
   it("passes when every implemented row has a test and REMOVED/commented rows are ignored", () => {
     const { code, out } = run("ok");
     expect(out).toContain("AC у специфікаціях: 2");

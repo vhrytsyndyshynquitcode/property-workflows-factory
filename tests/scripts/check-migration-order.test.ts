@@ -51,7 +51,9 @@ afterAll(() => {
   for (const dir of temps) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("scripts/check-migration-order.mjs", () => {
+// Тести скриптів запускають git і node в окремих процесах: на Windows під навантаженням (паралельні бази PGlite)
+// один запуск перевищував типові 5 с — фабрика (doctor: deterministic-tests) вимагає стабільних результатів.
+describe("scripts/check-migration-order.mjs", { timeout: 30_000 }, () => {
   it("passes when the PR migration is newer than the newest on main", () => {
     const { code, out } = run("newer");
     expect(code).toBe(0);
