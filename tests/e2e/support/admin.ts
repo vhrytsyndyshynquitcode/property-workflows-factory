@@ -16,7 +16,13 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  * on delete cascade (інакше Auth відповідає «Database error deleting user»). У демо: leave_requests.employee_id.
  * Якщо таких таблиць немає (або всі FK — cascade), лишіть порожнім.
  */
-const OWNED_ROWS: { table: string; column: string }[] = [];
+// property-workflows (зріз 3): запуски синтетичного менеджера (їхні задачі видаляє on delete cascade) і задачі, де
+// синтетичний вендор — виконавець чи той, хто позначив задачу (FK на profiles без cascade).
+const OWNED_ROWS: { table: string; column: string }[] = [
+  { table: "runs", column: "run_manager_id" },
+  { table: "run_tasks", column: "assignee_id" },
+  { table: "run_tasks", column: "done_by" },
+];
 
 /** Лише такі адреси прибирання має право видалити: uat-<run>[-<суфікс>]@example.test. */
 export const UAT_EMAIL = /^uat-[0-9a-z-]+@example\.test$/;
@@ -42,6 +48,21 @@ export function adminClient(): SupabaseClient {
     throw new Error("Для синтетичних даних UAT потрібні NEXT_PUBLIC_SUPABASE_URL і SUPABASE_SECRET_KEY (.env.local)");
   }
   return createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+/**
+ * property-workflows (зріз 3): синтетичний користувач з роллю для UAT — Auth (email підтверджено) + роль у profiles
+ * (колонку role змінює лише service_role, як у scripts/create-demo-users.mjs). Пароль не друкуємо й не зберігаємо.
+ */
+export async function createUatUser(suffix: string, role: "manager" | "admin" | "vendor") {
+  const supabase = adminClient();
+  const email = uatEmail(suffix);
+  const password = randomPassword();
+  const { data, error } = await supabase.auth.admin.createUser({ email, password, email_confirm: true });
+  if (error || !data.user) throw error ?? new Error(`не вдалося створити ${email}`);
+  const { error: roleError } = await supabase.from("profiles").update({ role }).eq("id", data.user.id);
+  if (roleError) throw roleError;
+  return { id: data.user.id, email, password };
 }
 
 async function listUatUsers(supabase: SupabaseClient): Promise<{ id: string; email: string }[]> {

@@ -8,7 +8,9 @@
 //
 // Джерело: демо-репо курсу, tests/e2e/auth.setup.ts (тег ws8-03-uat). ROLES — ВАШІ: роль → адреса акаунта на проді
 // (D0.5, *@example.test). Тут — тестові акаунти property-workflows на проді (ті самі, що в accounts.zip).
+import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test as setup } from "@playwright/test";
+import { createUatUser, hasAdminKey } from "./support/admin";
 import { signIn } from "./support/uat";
 
 const ROLES = {
@@ -24,5 +26,31 @@ for (const [role, email] of Object.entries(ROLES)) {
     // Головна шаблону показує email того, хто увійшов (data-testid="user-email"). Інша головна — свій локатор.
     await expect(page.getByTestId("user-email")).toHaveText(email);
     await page.context().storageState({ path: `playwright/.auth/${role}.json` });
+  });
+}
+
+// ── Зріз 3 (вендор): синтетичні користувачі UAT ─────────────────────────────────────────────────────────────────
+// Менеджер A і вендор V для сценаріїв, що пишуть у базу (запуск, позначка), і вендор без задач (AC-VENDOR-10):
+// uat-<прогін>-…@example.test, пароль випадковий і живе лише в пам'яті цього кроку (без запису й trace). Прибирає їх
+// разом із запусками cleanup.teardown.ts. Адреси (без паролів) — у playwright/.auth/uat-users.json (.gitignore).
+const UAT_USERS = { "uat-manager": "manager", "uat-vendor": "vendor", "uat-idle-vendor": "vendor" } as const;
+
+if (hasAdminKey()) {
+  setup("вхід: синтетичні менеджер і вендори зрізу 3", async ({ browser }) => {
+    // Три користувачі й три входи підряд: на повільному проді (до 25 с на вхід) 60 с не вистачало.
+    setup.setTimeout(180_000);
+    const emails: Record<string, string> = {};
+    for (const [key, role] of Object.entries(UAT_USERS)) {
+      const user = await createUatUser(key.replace(/^uat-/, ""), role);
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await signIn(page, user.email, user.password);
+      await expect(page.getByTestId("user-role")).toHaveText(role);
+      await context.storageState({ path: `playwright/.auth/${key}.json` });
+      await context.close();
+      emails[key] = user.email;
+    }
+    mkdirSync("playwright/.auth", { recursive: true });
+    writeFileSync("playwright/.auth/uat-users.json", JSON.stringify(emails, null, 2));
   });
 }
