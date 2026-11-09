@@ -321,6 +321,10 @@ export type Database = {
         Args: { p_task_id: string };
         Returns: string;
       };
+      is_last_required_task: {
+        Args: { p_task_id: string };
+        Returns: boolean;
+      };
     };
     Enums: {
       [_ in never]: never;

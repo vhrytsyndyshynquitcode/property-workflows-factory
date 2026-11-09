@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { APP_NAV } from "@/components/app/app-nav";
+import { APP_NAV, VENDOR_NAV } from "@/components/app/app-nav";
 import { SignOutButton } from "@/components/app/sign-out-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -20,10 +20,12 @@ import {
   RUN_STATUS_TONE,
   TASK_STATUS_LABEL,
   TASK_STATUS_TONE,
+  vendorRunView,
   type RunStatus,
   type TaskStatus,
 } from "@/lib/runs/domain";
 import { templateVersionLabel, type Role } from "@/lib/templates/domain";
+import { MarkDoneForm } from "@/components/app/mark-done-form";
 import { markTaskDone } from "../actions";
 
 // Сторінка запуску: прогрес і статус кожної задачі (AC-TASK-05, AC-TASK-08, AC-DSYS-01), задачі за розділами на момент
@@ -60,6 +62,79 @@ export default async function RunPage({ params, searchParams }: PageProps<"/runs
 
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", claims.sub).maybeSingle();
   const actor = { id: claims.sub, role: (profile?.role ?? "manager") as Role };
+
+  if (actor.role === "vendor") {
+    // AC-VENDOR-04, AC-VENDOR-05, AC-VENDOR-06: лише власні задачі; без email, менеджера й прогресу запуску.
+    const view = vendorRunView(
+      {
+        id: run.id,
+        tasks: run.run_tasks.map((t) => ({
+          id: t.id,
+          name: t.name,
+          sectionName: t.section_name,
+          isRequired: t.is_required,
+          assigneeId: t.assignee_id,
+          status: t.status as TaskStatus,
+        })),
+      },
+      actor.id,
+    );
+    const statusOf = new Map(run.run_tasks.map((t) => [t.id, t.status as TaskStatus]));
+    const positions = new Map(run.run_tasks.map((t) => [t.id, t.position]));
+    return (
+      <AppShell nav={VENDOR_NAV} actions={<SignOutButton />}>
+        {view.kind === "not_found" ? (
+          <Alert>
+            <AlertTitle>{view.message}</AlertTitle>
+          </Alert>
+        ) : (
+          <>
+            <PageHeader title={run.case_name} description={run.template_name} />
+            <dl className="grid grid-cols-[max-content_1fr] items-center gap-x-4 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">Status</dt>
+              <dd data-testid="run-status">
+                <StatusBadge tone={RUN_STATUS_TONE[run.status as RunStatus]}>{RUN_STATUS_LABEL[run.status as RunStatus]}</StatusBadge>
+              </dd>
+            </dl>
+            {groupBySection(
+              [...view.tasks]
+                .sort((a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0))
+                .map((t) => ({ ...t, sectionName: t.section })),
+            ).map((group) => (
+              <Card key={group.section}>
+                <CardContent className="flex flex-col gap-2">
+                  <h2 className="text-base font-semibold">{group.section}</h2>
+                  <ul className="flex flex-col divide-y divide-border">
+                    {group.tasks.map((task) => {
+                      const status = statusOf.get(task.id) ?? "to_do";
+                      return (
+                        <li key={task.id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm" data-testid="task-row">
+                          <span>{task.name}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-muted-foreground">{task.required}</span>
+                            <span data-testid="task-status">
+                              <StatusBadge tone={TASK_STATUS_TONE[status]}>{task.status}</StatusBadge>
+                            </span>
+                            {status === "to_do" ? (
+                              <MarkDoneForm runId={run.id} taskId={task.id} confirmed />
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        )}
+        <Link href="/runs" className="text-sm text-primary underline-offset-4 hover:underline">
+          All runs
+        </Link>
+      </AppShell>
+    );
+  }
+
   const { data: users } = await supabase.rpc("list_assignable_users");
 
   const tasks = [...run.run_tasks]
@@ -123,13 +198,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/runs
                     </span>
                     {task.status === "to_do" &&
                     canMarkDone(actor, { runManagerId: run.run_manager_id }, { assigneeId: task.assignee_id }) ? (
-                      <form action={markTaskDone}>
-                        <input type="hidden" name="runId" value={run.id} />
-                        <input type="hidden" name="taskId" value={task.id} />
-                        <Button type="submit" variant="outline" size="sm">
-                          Mark as done
-                        </Button>
-                      </form>
+                      <MarkDoneForm runId={run.id} taskId={task.id} />
                     ) : null}
                   </div>
                 </li>
